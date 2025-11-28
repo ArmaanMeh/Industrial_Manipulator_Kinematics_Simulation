@@ -5,49 +5,44 @@ from matplotlib.animation import FuncAnimation
 # -----------------------------
 # Robot parameters
 # -----------------------------
-L1, L2 = 4.0, 5.5           # shoulder and elbow link lengths
-d_min, d_max = 0.0, 8.0     # telescopic forearm extension limits
+L1, L2 = 3.0, 2.5           # shoulder and elbow link lengths
+d_min, d_max = 0.0, 6.0     # telescopic forearm extension limits
+
+# Dynamic radial constraint: maximum reach in XY plane
+max_radial = L1 + L2 + d_max   # safe upper bound
 
 # -----------------------------
-# Targets (evenly spaced floors, shelves above in Z)
+# Targets (floor + shelves)
 # -----------------------------
 floor_targets = [
     (3.0, 0.0, 0.5),        # F1
-    (-1.5, 2.598, 0.5),     # F2  (~sqrt(3)*1.5)
+    (-1.5, 2.598, 0.5),     # F2
     (-1.5, -2.598, 0.5)     # F3
 ]
 
 shelf_targets = [
-    (0.0, 0.0, 3.0),        # S1
-    (0.0, 0.0, 4.0),     # S2
-    (0.0, 0.0, 5.0)     # S3
+    (3.0, 0.0, 3.0),        # S1
+    (-1.5, 2.598, 4.0),     # S2
+    (-1.5, -2.598, 5.0)     # S3
 ]
 
 # -----------------------------
-# Inverse kinematics (3R + telescopic forearm)
+# Inverse kinematics
 # -----------------------------
 def ik_telescopic(x, y, z):
-    """
-    Returns (theta1, theta2, theta3, d) for a target (x, y, z).
-    d is the telescopic extension along the forearm axis (theta2+theta3).
-    Raises ValueError if unreachable or extension out of limits.
-    """
     theta1 = np.arctan2(y, x)
     r_xy = np.sqrt(x**2 + y**2)
     dist = np.sqrt(r_xy**2 + z**2)
 
-    # Elbow from law of cosines for the RR plane triangle
     cos_theta3 = (dist**2 - L1**2 - L2**2) / (2.0 * L1 * L2)
     if abs(cos_theta3) > 1.0:
         raise ValueError("Target out of reach")
     theta3 = np.arccos(cos_theta3)
 
-    # Shoulder using geometric decomposition
     k1 = L1 + L2 * np.cos(theta3)
     k2 = L2 * np.sin(theta3)
     theta2 = np.arctan2(z, r_xy) - np.arctan2(k2, k1)
 
-    # Telescopic extension along final forearm axis
     reach_rr = L1 * np.cos(theta2) + L2 * np.cos(theta2 + theta3)
     d = dist - reach_rr
 
@@ -57,13 +52,9 @@ def ik_telescopic(x, y, z):
     return theta1, theta2, theta3, d
 
 # -----------------------------
-# Forward kinematics (3R + telescopic forearm)
+# Forward kinematics
 # -----------------------------
 def fk_telescopic(theta1, theta2, theta3, d):
-    """
-    Returns positions: base, joint2, joint3, end-effector (ee).
-    The telescopic extension d is collinear with the forearm axis.
-    """
     base = np.array([0.0, 0.0, 0.0])
 
     j2 = np.array([
@@ -87,7 +78,7 @@ def fk_telescopic(theta1, theta2, theta3, d):
     return base, j2, j3, ee
 
 # -----------------------------
-# Build pose sequence: F1->S1->F2->S2->F3->S3
+# Pose sequence: F1->S1->F2->S2->F3->S3
 # -----------------------------
 poses = []
 for f, s in zip(floor_targets, shelf_targets):
@@ -99,11 +90,27 @@ for f, s in zip(floor_targets, shelf_targets):
 # -----------------------------
 fig = plt.figure(figsize=(10, 8))
 ax = fig.add_subplot(111, projection='3d')
-ax.set_xlim(-8, 8); ax.set_ylim(-8, 8); ax.set_zlim(0, 8)
+ax.set_xlim(-max_radial-2, max_radial+2)
+ax.set_ylim(-max_radial-2, max_radial+2)
+ax.set_zlim(0, 8)
 ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
 ax.set_title("3R + Telescopic Forearm | Floor to Shelf Stacking")
 
-# Targets with colors and labels
+# Floor grid
+xg = np.linspace(-max_radial, max_radial, 20)
+yg = np.linspace(-max_radial, max_radial, 20)
+Xg, Yg = np.meshgrid(xg, yg)
+Zg = np.zeros_like(Xg)
+ax.plot_wireframe(Xg, Yg, Zg, color='gray', linewidth=0.3, alpha=0.4)
+
+# Reachable circle in XY plane
+theta = np.linspace(0, 2*np.pi, 200)
+xc = max_radial * np.cos(theta)
+yc = max_radial * np.sin(theta)
+zc = np.zeros_like(theta) + 0.01
+ax.plot(xc, yc, zc, color='gray', linestyle='--', linewidth=1)
+
+# Targets
 for i, (x, y, z) in enumerate(floor_targets, start=1):
     ax.scatter(x, y, z, c='red', marker='o', s=120, edgecolors='black')
     ax.text(x, y, z + 0.2, f"F{i}", color='red', fontsize=9, ha='center')
@@ -120,14 +127,13 @@ joints, = ax.plot([], [], [], 'ro', markersize=8, label='Joints')
 ax.legend()
 
 # -----------------------------
-# Interpolation in joint space
+# Interpolation
 # -----------------------------
 frames_per_segment = 30
 all_frames = []
 for i in range(len(poses) - 1):
     start = np.array(poses[i])
     end = np.array(poses[i + 1])
-
     for t in np.linspace(0.0, 1.0, frames_per_segment):
         all_frames.append((1.0 - t) * start + t * end)
 
@@ -138,19 +144,15 @@ def update(frame):
     theta1, theta2, theta3, d = frame
     base, j2, j3, ee = fk_telescopic(theta1, theta2, theta3, d)
 
-    # Link 1
     link1.set_data([base[0], j2[0]], [base[1], j2[1]])
     link1.set_3d_properties([base[2], j2[2]])
 
-    # Link 2
     link2.set_data([j2[0], j3[0]], [j2[1], j3[1]])
     link2.set_3d_properties([j2[2], j3[2]])
 
-    # Telescopic forearm segment
     telescopic.set_data([j3[0], ee[0]], [j3[1], ee[1]])
     telescopic.set_3d_properties([j3[2], ee[2]])
 
-    # Joints
     joints.set_data([base[0], j2[0], j3[0], ee[0]],
                     [base[1], j2[1], j3[1], ee[1]])
     joints.set_3d_properties([base[2], j2[2], j3[2], ee[2]])
