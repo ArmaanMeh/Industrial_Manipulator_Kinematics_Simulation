@@ -5,7 +5,7 @@ from matplotlib.animation import FuncAnimation
 # -----------------------------
 # Robot parameters
 # -----------------------------
-L1, L2 = 3.0, 2.5           # shoulder and elbow link lengths
+L1, L2 = 4.0, 5.5           # shoulder and elbow link lengths
 d_min, d_max = 0.0, 6.0     # telescopic forearm extension limits
 
 # Dynamic radial constraint: maximum reach in XY plane
