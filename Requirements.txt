@@ -1,0 +1,7 @@
+1. Design a robot architecture.(links,joints)
+2.Compute inverse kinematics.
+3.Compute Forward kinematics.
+4. Validation of values.(angles,points)
+5.pick and place points working animation.
+6.video demonstration
+7.git and readme.md
