@@ -40,7 +40,7 @@ for i in range(3):
     tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
 
 APPROACH_OFFSET = 0.05
-DWELL_STEPS = 10
+DWELL_STEPS = 5
 POS_MASK = [1,1,1,0,0,0]
 
 # ------------------------------------------------------------
@@ -120,7 +120,8 @@ ax.set_title("RRRP | Roboticstoolbox IK + Pre‑Puma visualization")
 reach = L1+L2+L3+d4_max+0.5
 Xp,Yp = np.meshgrid(np.linspace(-reach,reach,2),np.linspace(-reach,reach,2))
 Zp = np.zeros_like(Xp)
-ax.plot_surface(Xp,Yp,Zp,alpha=0.15,color='gray',edgecolor='none')
+ax.plot_surface(Xp,Yp,Zp,alpha=0.2,color='lightblue',edgecolor='none')
+
 
 # Plot floor and shelf points
 for i,(x,y,z) in enumerate(floor_targets,1):
