@@ -122,14 +122,16 @@ Xp,Yp = np.meshgrid(np.linspace(-reach,reach,2),np.linspace(-reach,reach,2))
 Zp = np.zeros_like(Xp)
 ax.plot_surface(Xp,Yp,Zp,alpha=0.2,color='lightblue',edgecolor='none')
 
-# 360° work envelope circle (XY plane at z=0)
-theta = np.linspace(0, 2*np.pi, 300)
-R = L2 + L3 + d4_max   # maximum horizontal reach
-x_circle = R * np.cos(theta)
-y_circle = R * np.sin(theta)
-z_circle = np.zeros_like(theta)
+# 3D spherical work envelope (visual only)
+R = L2 + L3 + d4_max   # max radial reach
+u = np.linspace(0, 2*np.pi, 50)   # azimuth
+v = np.linspace(0, np.pi/2, 50)   # polar (restrict to upper hemisphere if Z>=0)
+x_sphere = R * np.outer(np.cos(u), np.sin(v))
+y_sphere = R * np.outer(np.sin(u), np.sin(v))
+z_sphere = R * np.outer(np.ones_like(u), np.cos(v))
+ax.plot_wireframe(x_sphere, y_sphere, z_sphere, color='gray', alpha=0.3, linewidth=0.5)
+ax.text(0, 0, R, "Work Envelope", color="black", fontsize=12, ha="center", va="bottom")
 
-ax.plot(x_circle, y_circle, z_circle, 'k--', linewidth=2, label="Work envelope")
 
 # Plot floor and shelf points
 for i,(x,y,z) in enumerate(floor_targets,1):
