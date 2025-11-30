@@ -41,7 +41,7 @@ for i in range(3):
     tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
 
 APPROACH_OFFSET = 0.0
-DWELL_STEPS = 1
+DWELL_STEPS = 5
 POS_MASK = [1, 1, 1, 0, 0, 0]
 
 # ------------------------------------------------------------
@@ -210,8 +210,8 @@ ax.set_zlim(0.0, reach)
 ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
 
 # Grip logic parameters
-grip_tol = 0.06   # distance threshold to "touch" and grip at floor
-place_tol = 0.06  # distance threshold to place at shelf
+grip_tol = 0.01   # distance threshold to "touch" and grip at floor
+place_tol = 0.01  # distance threshold to place at shelf
 
 def reset_objects():
     for obj in objects:
