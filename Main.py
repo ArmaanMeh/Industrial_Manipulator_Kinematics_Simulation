@@ -262,6 +262,18 @@ def update(q):
                 obj["placed"] = True
             
     return link1_line, link2_line, link3_line, prism_line, joints, *(o["poly"] for o in objects)
+def reset_objects():
+    for obj in objects:
+        center = obj["start"]
+        faces = hex_faces(center, obj["radius"], obj["height"])
+        obj["poly"].set_verts(faces)
+        obj["gripped"] = False
+        obj["placed"] = False
+def on_animation_end(evt):
+    reset_objects()
+
+ani = FuncAnimation(fig, update, frames=frames, interval=120, blit=False, repeat=False)
+ani._stop = lambda: (reset_objects(), plt.close(fig))  # reset and close when finished
 
 ani = FuncAnimation(fig, update, frames=frames, interval=120, blit=False, repeat=True)
 plt.show()
