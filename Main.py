@@ -11,7 +11,7 @@ import spatialmath as sm
 L1 = 0.30
 L2 = 0.35
 L3 = 0.35
-d4_min, d4_max = 0.0, 0.35
+d4_min, d4_max = -0.4, 0.55
 
 links = [
     RevoluteDH(d=L1, a=0.0, alpha=np.pi/2),
@@ -39,7 +39,7 @@ tasks = []
 for i in range(3):
     tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
 
-APPROACH_OFFSET = 0.02
+APPROACH_OFFSET = 0.0
 DWELL_STEPS = 2
 POS_MASK = [1,1,1,0,0,0]
 
@@ -122,12 +122,13 @@ Xp,Yp = np.meshgrid(np.linspace(-reach,reach,2),np.linspace(-reach,reach,2))
 Zp = np.zeros_like(Xp)
 ax.plot_surface(Xp,Yp,Zp,alpha=0.2,color='lightblue',edgecolor='none')
 
-# Work envelope circle (XY plane at z=0)
-theta = np.linspace(0, 2*np.pi, 200)
-R = L2 + L3 + d4_max   # max horizontal reach
+# 360° work envelope circle (XY plane at z=0)
+theta = np.linspace(0, 2*np.pi, 300)
+R = L2 + L3 + d4_max   # maximum horizontal reach
 x_circle = R * np.cos(theta)
 y_circle = R * np.sin(theta)
 z_circle = np.zeros_like(theta)
+
 ax.plot(x_circle, y_circle, z_circle, 'k--', linewidth=2, label="Work envelope")
 
 # Plot floor and shelf points
