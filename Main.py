@@ -11,7 +11,7 @@ import spatialmath as sm
 L1 = 0.30
 L2 = 0.35
 L3 = 0.35
-d4_min, d4_max = -0.4, 0.55
+d4_min, d4_max = -0.45, 0.55
 
 links = [
     RevoluteDH(d=L1, a=0.0, alpha=np.pi/2),
@@ -40,7 +40,7 @@ for i in range(3):
     tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
 
 APPROACH_OFFSET = 0.0
-DWELL_STEPS = 2
+DWELL_STEPS = 1
 POS_MASK = [1,1,1,0,0,0]
 
 # ------------------------------------------------------------
@@ -121,6 +121,26 @@ reach = L1+L2+L3+d4_max+0.5
 Xp,Yp = np.meshgrid(np.linspace(-reach,reach,2),np.linspace(-reach,reach,2))
 Zp = np.zeros_like(Xp)
 ax.plot_surface(Xp,Yp,Zp,alpha=0.2,color='lightblue',edgecolor='none')
+
+# Shelf planes (aligned with shelf target Z levels)
+shelf_x = [0.45, 0.65]   # span around your shelf target X
+shelf_y = [0.50, 0.60]   # span around your shelf target Y
+shelf_levels = [0.25, 0.35, 0.45]
+for z_level in shelf_levels:
+    Xs, Ys = np.meshgrid(shelf_x, shelf_y)
+    Zs = np.full_like(Xs, z_level)
+    ax.plot_surface(Xs, Ys, Zs, alpha=0.3, color='saddlebrown', edgecolor='none')
+# Add vertical support lines at the four corners
+corner_points = [(shelf_x[0], shelf_y[0]),
+                 (shelf_x[0], shelf_y[1]),
+                 (shelf_x[1], shelf_y[0]),
+                 (shelf_x[1], shelf_y[1])]
+
+for (cx, cy) in corner_points:
+    ax.plot([cx, cx], [cy, cy], [shelf_levels[0], shelf_levels[-1]],
+            color='saddlebrown', linewidth=3)
+# Label the shelf
+ax.text(np.mean(shelf_x), np.mean(shelf_y), 0.50, "Shelf", color="saddlebrown",fontsize=12, ha="center", va="bottom")
 
 # 3D spherical work envelope (visual only)
 R = L2 + L3 + d4_max   # max radial reach
