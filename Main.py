@@ -30,9 +30,9 @@ floor_targets = [
     (-0.3,-0.25, 0.0)
 ]
 shelf_targets = [
-    (0.7, 0.4, 0.3),
-    (0.65,0.45,0.4),
-    (0.6, 0.5, 0.5)
+    (0.7, 1.5, 0.25),
+    (0.7,1.5,0.4),
+    (0.7, 1.5, 0.55)
 ]
 
 tasks = []
@@ -114,7 +114,7 @@ frames = build_program(tasks)
 # ------------------------------------------------------------
 fig = plt.figure(figsize=(11,9))
 ax = fig.add_subplot(111,projection="3d")
-ax.set_title("RRRP | Roboticstoolbox IK + Pre‑Puma visualization")
+ax.set_title("RRRP | Roboticstoolbox IK")
 
 # Floor plane
 reach = L1+L2+L3+d4_max+0.5
