@@ -213,7 +213,18 @@ ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
 grip_tol = 0.06   # distance threshold to "touch" and grip at floor
 place_tol = 0.06  # distance threshold to place at shelf
 
-def update(q):
+def reset_objects():
+    for obj in objects:
+        center = obj["start"]
+        faces = hex_faces(center, obj["radius"], obj["height"])
+        obj["poly"].set_verts(faces)
+        obj["gripped"] = False
+        obj["placed"] = False
+
+def update(frame_idx):
+    if frame_idx == 0:
+        reset_objects()
+    q = frames[frame_idx]
     # Use roboticstoolbox FK to get all joint frames
     T_all = rrrp.fkine_all(q)
     pts = [T.t for T in T_all]
@@ -262,18 +273,7 @@ def update(q):
                 obj["placed"] = True
             
     return link1_line, link2_line, link3_line, prism_line, joints, *(o["poly"] for o in objects)
-def reset_objects():
-    for obj in objects:
-        center = obj["start"]
-        faces = hex_faces(center, obj["radius"], obj["height"])
-        obj["poly"].set_verts(faces)
-        obj["gripped"] = False
-        obj["placed"] = False
-def on_animation_end(evt):
-    reset_objects()
 
-ani = FuncAnimation(fig, update, frames=frames, interval=120, blit=False, repeat=False)
-ani._stop = lambda: (reset_objects(), plt.close(fig))  # reset and close when finished
+ani = FuncAnimation(fig, update, frames=len(frames), interval=50, blit=False, repeat=True)
 
-ani = FuncAnimation(fig, update, frames=frames, interval=120, blit=False, repeat=True)
 plt.show()
