@@ -21,20 +21,6 @@ def dh_transform(theta, d, a, alpha):
         [0,   0,      0,     1   ]
     ])
     
-def print_dh_table(self, q):
-    q1, q2, q3, q4 = q
-    dh_params = [
-        {"theta": q1, "d": self.L1, "a": 0,    "alpha": np.pi/2},
-        {"theta": q2, "d": 0,       "a": self.L2, "alpha": 0},
-        {"theta": 0,  "d": q3,      "a": 0,    "alpha": np.pi/2},  # Prismatic
-        {"theta": q4, "d": 0,       "a": self.L3, "alpha": 0}
-    ]
-    print("\nDenavit–Hartenberg Parameters:")
-    print("Joint | θ (rad) | d (m) | a (m) | α (rad)")
-    print("-------------------------------------------")
-    for i, p in enumerate(dh_params, 1):
-        print(f"{i:5d} | {p['theta']:+.3f} | {p['d']:+.3f} | {p['a']:+.3f} | {p['alpha']:+.3f}")
-
 class RRPRRobot:
     # L1, L2, L3 are link lengths. d4_limits apply to the prismatic joint q3.
     def __init__(self, L1, L2, L3, d4_limits):
@@ -193,8 +179,8 @@ def jtraj(q0, q1, steps):
             diff[j] -= 2 * np.pi
         elif diff[j] < -np.pi:
             diff[j] += 2 * np.pi
-            
-    # 3. Interpolate
+       
+    # 4. Interpolate
     for i, s in enumerate(np.linspace(0, 1, steps)):
         qs[i, :] = q0 + s * diff
         
