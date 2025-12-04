@@ -20,6 +20,20 @@ def dh_transform(theta, d, a, alpha):
         [0,   sa,     ca,    d   ],
         [0,   0,      0,     1   ]
     ])
+    
+def print_dh_table(self, q):
+    q1, q2, q3, q4 = q
+    dh_params = [
+        {"theta": q1, "d": self.L1, "a": 0,    "alpha": np.pi/2},
+        {"theta": q2, "d": 0,       "a": self.L2, "alpha": 0},
+        {"theta": 0,  "d": q3,      "a": 0,    "alpha": np.pi/2},  # Prismatic
+        {"theta": q4, "d": 0,       "a": self.L3, "alpha": 0}
+    ]
+    print("\nDenavit–Hartenberg Parameters:")
+    print("Joint | θ (rad) | d (m) | a (m) | α (rad)")
+    print("-------------------------------------------")
+    for i, p in enumerate(dh_params, 1):
+        print(f"{i:5d} | {p['theta']:+.3f} | {p['d']:+.3f} | {p['a']:+.3f} | {p['alpha']:+.3f}")
 
 class RRPRRobot:
     # L1, L2, L3 are link lengths. d4_limits apply to the prismatic joint q3.
@@ -98,8 +112,8 @@ class RRPRRobot:
         target_pos = np.array(target_pos)
         
         max_iter = 100
-        tolerance = 1e-4
-        learning_rate = 0.5
+        tolerance = 1e-5
+        learning_rate = 0.3
         
         for _ in range(max_iter):
             # 1. Forward Kinematics
@@ -130,32 +144,34 @@ class RRPRRobot:
 # ------------------------------------------------------------
 # 2. Robot Definition
 # ------------------------------------------------------------
-L1 = 0.30
-L2 = 0.35
-L3 = 0.35
-d_prismatic_min, d_prismatic_max = -0.45, 0.55
+L1 = 0.25
+L2 = 0.30
+L3 = 0.30
+d_prismatic_min, d_prismatic_max = -0.35, 0.45
 
 robot = RRPRRobot(L1, L2, L3, [d_prismatic_min, d_prismatic_max])
 
 # ------------------------------------------------------------
 # 3. Tasks & Trajectory Generation
 # ------------------------------------------------------------
+# --- NEW FLOOR TARGETS ---
 floor_targets = [
-    (-0.4, 0.4, 0.0),
-    (0.5,  0.5, 0.0),
-    (0.0, -0.4, 0.0)
+    (0.3, -0.4, 0.0),    
+    (-0.4, -0.3, 0.0),   
+    (-0.1, 0.4, 0.0)     
 ]
+# --- NEW SHELF TARGETS (Higher levels) ---
 shelf_targets = [
-    (0.5, 0.55, 0.25),
-    (0.5, 0.55, 0.35),
-    (0.5, 0.55, 0.45)
+    (0.4, 0.55, 0.30),
+    (0.4, 0.55, 0.40),
+    (0.4, 0.55, 0.50)
 ]
 
 tasks = []
 for i in range(3):
     tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
 
-APPROACH_OFFSET = 0.15 
+APPROACH_OFFSET = 0 
 DWELL_STEPS = 5
 
 def jtraj(q0, q1, steps):
@@ -188,6 +204,7 @@ def build_task(q_current, start_xyz, end_xyz):
     sx, sy, sz = start_xyz
     ex, ey, ez = end_xyz
     
+    # Define approach and contact points based on offset
     p_approach_start = np.array([sx, sy, sz + APPROACH_OFFSET])
     p_contact_start  = np.array([sx, sy, sz])
     p_approach_end   = np.array([ex, ey, ez + APPROACH_OFFSET]) 
@@ -196,20 +213,21 @@ def build_task(q_current, start_xyz, end_xyz):
     # IK Solutions
     q_app_start = robot.inverse_kinematics(p_approach_start, q_current)
     q_con_start = robot.inverse_kinematics(p_contact_start, q_app_start)
-    q_app_end   = robot.inverse_kinematics(p_approach_end, q_app_start)
+    # Force IK seed to be the contact configuration at start
+    q_app_end   = robot.inverse_kinematics(p_approach_end, q_con_start)
     q_con_end   = robot.inverse_kinematics(p_contact_end, q_app_end)
 
     traj = []
     
     # Sequence of moves
-    traj.extend(jtraj(q_current, q_app_start, 40))   # Move to object
-    traj.extend(jtraj(q_app_start, q_con_start, 20)) # Slide down
+    traj.extend(jtraj(q_current, q_app_start, 40))   # Move to approach point (above object)
+    traj.extend(jtraj(q_app_start, q_con_start, 20)) # Slide down to contact
     traj.extend([q_con_start] * DWELL_STEPS)         # Grip
-    traj.extend(jtraj(q_con_start, q_app_start, 20)) # Slide up
-    traj.extend(jtraj(q_app_start, q_app_end, 50))   # Move to shelf
-    traj.extend(jtraj(q_app_end, q_con_end, 20))     # Slide in
+    traj.extend(jtraj(q_con_start, q_app_start, 20)) # Slide up to clearance
+    traj.extend(jtraj(q_app_start, q_app_end, 50))   # Move to shelf approach
+    traj.extend(jtraj(q_app_end, q_con_end, 20))     # Slide down to place
     traj.extend([q_con_end] * DWELL_STEPS)           # Release
-    traj.extend(jtraj(q_con_end, q_app_end, 20))     # Slide out
+    traj.extend(jtraj(q_con_end, q_app_end, 20))     # Slide up to clearance
 
     return np.array(traj), q_app_end
 
@@ -247,7 +265,7 @@ def make_hex_collection(center, radius=0.05, height=0.05, color='gray'):
 # ------------------------------------------------------------
 fig = plt.figure(figsize=(10, 8))
 ax = fig.add_subplot(111, projection="3d")
-ax.set_title("R R P R Robot | Optimized Trajectory & Reset")
+ax.set_title("R R P R Robot | Updated Targets Simulation")
 
 # Environment
 reach = L1 + L2 + L3 + d_prismatic_max + 0.1
@@ -256,9 +274,9 @@ Xp, Yp = np.meshgrid(np.linspace(-ax_limit, ax_limit, 2), np.linspace(-ax_limit,
 Zp = np.zeros_like(Xp)
 ax.plot_surface(Xp, Yp, Zp, alpha=0.2, color='lightblue', edgecolor='none')
 
-# Shelf
-shelf_x, shelf_y = [0.45, 0.65], [0.50, 0.60]
-shelf_levels = [0.25, 0.35, 0.45]
+# --- UPDATED SHELF VISUALIZATION ---
+shelf_x, shelf_y = [0.3, 0.7], [0.45, 0.65] 
+shelf_levels = [0.30, 0.40, 0.50] # Match the target Z levels
 for z_level in shelf_levels:
     Xs, Ys = np.meshgrid(shelf_x, shelf_y)
     Zs = np.full_like(Xs, z_level)
@@ -292,8 +310,8 @@ for i, (x, y, z) in enumerate(floor_targets, 1):
 # Robot Visuals
 link1_line, = ax.plot([], [], [], 'b-', linewidth=3)
 link2_line, = ax.plot([], [], [], 'g-', linewidth=3)
-prism_line, = ax.plot([], [], [], 'm-', linewidth=3) # Changed color for Prismatic
-link4_line, = ax.plot([], [], [], 'orange', linewidth=3) # Final link
+prism_line, = ax.plot([], [], [], 'm-', linewidth=3) # Joint 3 (Prismatic)
+link4_line, = ax.plot([], [], [], 'orange', linewidth=3) # Joint 4 (Revolute)
 joints, = ax.plot([], [], [], 'ko', markersize=6)
 
 ax.set_xlim(-ax_limit, ax_limit)
