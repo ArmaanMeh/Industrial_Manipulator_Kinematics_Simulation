@@ -22,7 +22,47 @@ This repository contains a pick-and-place RRPR robot simulation implemented in a
   - **Maintainable:** Less brittle than hand-derived closed-form solutions and easier to adapt to new joint types or constraints.
   - **Practical:** Seeding IK with approach/contact poses and using regularized pseudo-inverse when necessary gives reliable behavior for position-only tasks.
 
-**Orientation control:** Removed — inverse kinematics is position-only in this version. If you need orientation objectives later, we can add them back as an optional feature that remains backward compatible.
+## Real‑Life Applications of RRPR Configuration
+1. Industrial Assembly & Manufacturing
+SCARA robots (Selective Compliance Assembly Robot Arm) often use RRPR‑like configurations.
+
+They are common in electronics assembly (placing chips, circuit boards) and automotive manufacturing (fastening, welding, or part transfer).
+
+The prismatic joint allows vertical motion for pick‑and‑place tasks, while revolute joints handle horizontal positioning.
+
+2. Warehousing & Logistics
+RRPR arms can be programmed to pick items from bins or shelves and place them elsewhere.
+
+Example: Automated systems in libraries or storage facilities where books or packages must be retrieved and placed accurately.
+
+3. Medical & Laboratory Robotics
+Used in lab automation for handling test tubes, reagents, or instruments.
+
+The prismatic joint provides precise vertical control, reducing risk of spills or contamination.
+
+In surgery, RRPR‑style manipulators can position tools with both rotational flexibility and linear reach.
+
+4. Drawing, Painting, and 3D Printing
+RRPR arms have been applied in drawing robots where the prismatic joint controls pen up/down motion while revolute joints move across the surface.
+
+Similar logic applies to painting robots or additive manufacturing arms.
+
+5. Inspection & Quality Control
+RRPR manipulators can extend into tight spaces for visual inspection or sensor placement.
+
+Useful in aerospace and automotive industries where components are densely packed.
+
+6. Education & Research
+RRPR robots are popular in robotics labs for teaching kinematics and control.
+
+Their mixed joint types (R + P) make them ideal for demonstrating both rotational and translational motion.
+
+🔎 Why RRPR is Useful
+Revolute joints (R): Provide rotational flexibility for positioning.
+
+Prismatic joint (P): Adds linear extension/retraction, enabling reach into vertical or confined spaces.
+
+Combination: Makes RRPR arms compact yet versatile — perfect for repetitive, high‑precision tasks.
 ## Requirements
 
 - Python 3.8+
@@ -171,23 +211,6 @@ if __name__ == '__main__':
 
 - **Logic:** The animation loop updates link line data from the FK of the current joint configuration and applies grip/place state changes to the corresponding object polygons. The scene includes a right-side, color-coded table (created by `create_scene()`) that lists link/joint names and displays live joint values each frame (q1, q2, q4 shown in degrees; q3 in meters). The work envelope is shown as a wireframe hemisphere (Z ≥ 0) indicating the approximate reachable workspace. The visualization code is isolated so unit tests or alternate front-ends could reuse the trajectory program without plotting.
 
-## Dependencies & Installation
 
-- **Python:** 3.8+
-- **Pip packages:** NumPy, Matplotlib
-
-Install dependencies with:
-
-```bash
-pip install numpy matplotlib
-```
-
-## Run
-
-Run the simulation:
-
-```bash
-python CW_RRPR.py
-```
 
 
