@@ -211,6 +211,22 @@ if __name__ == '__main__':
 
 - **Logic:** The animation loop updates link line data from the FK of the current joint configuration and applies grip/place state changes to the corresponding object polygons. The scene includes a right-side, color-coded table (created by `create_scene()`) that lists link/joint names and displays live joint values each frame (q1, q2, q4 shown in degrees; q3 in meters). The work envelope is shown as a wireframe hemisphere (Z ≥ 0) indicating the approximate reachable workspace. The visualization code is isolated so unit tests or alternate front-ends could reuse the trajectory program without plotting.
 
+## 🎬 Project Demo Video
+Watch the full demonstration here: [Demo Video](https://youtu.be/vbxxXZC-yeo?si=TSO41-wjQQpYJMBf)
+
+## 🎬 Project Git Link
+ Full Project Go Through here: [Git Link](https://github.com/ArmaanMeh/Industrial_Manipulator_Kinematics_Simulation.git)
+
+## References
+
+This project builds upon foundational programming concepts and code structures introduced in coursework and academic resources.  
+In particular, the initial framework for kinematics and simulation logic was adapted from:
+
+- **Dr. Judhi Prasetyo** – *Foundation Code for Programming* (Course materials, Middlesex University Dubai, 2025).
+
+Jacobian pseudo inverse method learned from NPTEL IIT DELHI YOUTUBE CHANNEL.
+The Readme formatting,inclusion of perfect comments have been added using co-pilot.
+Additional features like work envelope and the link diagram in animation coded using vs code co pilot.
 
 
 
