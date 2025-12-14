@@ -35,6 +35,7 @@ class RRPRRobot:
         self.L2 = L2
         self.L3 = L3 # L3 is now the length of the final revolute link
         self.d3_min, self.d3_max = d4_limits # Limits for the prismatic joint q3
+        # No explicit revolute clamping is enforced here; keep joints free
 
     def forward_kinematics_all(self, q):
         """
@@ -101,40 +102,46 @@ class RRPRRobot:
     # Logic: Geometric Jacobian (6x4) mapping joint rates to end-effector twist.
 
     def inverse_kinematics(self, target_pos, q0):
-        
+        """Inverse kinematics (position-only).
+
+        Parameters:
+        - target_pos: (3,) target position for end-effector
+        - q0: (4,) initial joint guess
+
+        Returns: q (4,) solution joint vector
+        """
         q = np.array(q0, dtype=float)
         target_pos = np.array(target_pos)
-        
+
         max_iter = 100
         tolerance = 1e-5
         learning_rate = 0.3
-        
+
         for _ in range(max_iter):
             # 1. Forward Kinematics
-            current_pos = self.get_end_effector_pos(q)
-            
-            # 2. Error Calculation (Position only)
-            error = target_pos - current_pos
-            if np.linalg.norm(error) < tolerance:
+            transforms = self.forward_kinematics_all(q)
+            current_pos = transforms[-1][:3, 3]
+
+            # 2. Position Error
+            pos_err = target_pos - current_pos
+            if np.linalg.norm(pos_err) < tolerance:
                 break
-            
-            # 3. Jacobian (Position part only: top 3 rows)
-            J_full = self.jacobian(q)
-            J_pos = J_full[:3, :] # 3x4 matrix
-            
-            # 4. Pseudo-Inverse update
-            dq = np.linalg.pinv(J_pos) @ error
+
+            # 3. Jacobian (position part only)
+            J_pos = self.jacobian(q)[:3, :]
+            dq = np.linalg.pinv(J_pos) @ pos_err
+
             q += learning_rate * dq
-            
-            # Clamp Prismatic Joint (q3 is index 2)
+
+            # Clamp prismatic joint to configured bounds
             q[2] = np.clip(q[2], self.d3_min, self.d3_max)
-            
+
             # Normalize Revolute angles (q1, q2, q4 are indices 0, 1, 3)
             revolute_indices = [0, 1, 3]
             q[revolute_indices] = (q[revolute_indices] + np.pi) % (2 * np.pi) - np.pi
-            
+
         return q
-    # Logic: Simple pseudo-inverse based IK solver; clamps prismatic and normalizes revolute joints.
+    # Logic: Simple pseudo-inverse based IK solver (position-only); keeps revolute angles normalized.
 
 # 2. Robot Definition
 
@@ -180,17 +187,19 @@ def create_tasks():
     tasks = []
     for i in range(3):
         tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
-    approach_offset = 0
+    approach_offset = 0.06  # meters above contact point for approach
+    retract_offset = 0.12   # meters above approach for safe retraction/transfer
     dwell_steps = 5
-    return tasks, approach_offset, dwell_steps
+    return tasks, approach_offset, retract_offset, dwell_steps
 
 
-tasks, APPROACH_OFFSET, DWELL_STEPS = create_tasks()
+tasks, APPROACH_OFFSET, RETRACT_OFFSET, DWELL_STEPS = create_tasks()
 
 def jtraj(q0, q1, steps):
     """
     Generates a joint space trajectory (Linear interpolation).
-    Includes logic to take the shortest angular path for Revolute joints.
+    Includes logic to take the shortest angular path for Revolute joints and wraps
+    resulting revolute angles to [-pi, pi].
     """
     q0 = np.array(q0)
     q1 = np.array(q1)
@@ -210,31 +219,50 @@ def jtraj(q0, q1, steps):
     # 4. Interpolate
     for i, s in enumerate(np.linspace(0, 1, steps)):
         qs[i, :] = q0 + s * diff
+        # Wrap revolute angles into [-pi, pi]
+        qs[i, revolute_indices] = (qs[i, revolute_indices] + np.pi) % (2 * np.pi) - np.pi
         
     return qs
 
-def build_task(robot, q_current, start_xyz, end_xyz, obj_index, approach_offset, dwell_steps):
+def build_task(robot, q_current, start_xyz, end_xyz, obj_index, approach_offset, retract_offset, dwell_steps):
     sx, sy, sz = start_xyz
     ex, ey, ez = end_xyz
 
-    # Define approach and contact points based on offset
-    p_approach_start = np.array([sx, sy, sz + approach_offset])
+    # Contact points (no separate approach/retract)
     p_contact_start = np.array([sx, sy, sz])
-    p_approach_end = np.array([ex, ey, ez + approach_offset])
     p_contact_end = np.array([ex, ey, ez])
 
-    # IK Solutions
+    # IK Solutions (position-only), including approach/retract poses
+    p_approach_start = np.array([sx, sy, sz + approach_offset])
+    p_approach_end = np.array([ex, ey, ez + approach_offset])
+
+    # Contact IK
     q_app_start = robot.inverse_kinematics(p_approach_start, q_current)
     q_con_start = robot.inverse_kinematics(p_contact_start, q_app_start)
-    # Force IK seed to be the contact configuration at start
+
+    # Seed next approach/end and compute end contact
     q_app_end = robot.inverse_kinematics(p_approach_end, q_con_start)
     q_con_end = robot.inverse_kinematics(p_contact_end, q_app_end)
+
+    # Retract IK (higher transfer points)
+    p_retract_start = p_approach_start + np.array([0.0, 0.0, retract_offset])
+    p_retract_end = p_approach_end + np.array([0.0, 0.0, retract_offset])
+    q_retract_start = robot.inverse_kinematics(p_retract_start, q_con_start)
+    q_retract_end = robot.inverse_kinematics(p_retract_end, q_app_end)
+
+    # Ensure prismatic joint clamping and revolute normalization for computed poses
+    revolute_indices = [0, 1, 3]
+    for qq in (q_app_start, q_con_start, q_retract_start, q_retract_end, q_app_end, q_con_end):
+        # Prismatic clamp
+        qq[2] = np.clip(qq[2], robot.d3_min, robot.d3_max)
+        # Normalize revolutes
+        qq[revolute_indices] = (qq[revolute_indices] + np.pi) % (2 * np.pi) - np.pi
 
     traj = []
     actions = []
     indices = []
 
-    # Sequence of moves
+    # Sequence of moves: go to contact, grip, transfer, place
     traj.extend(jtraj(q_current, q_app_start, 40))
     actions.extend(["move"] * 40); indices.extend([obj_index] * 40)
 
@@ -244,23 +272,29 @@ def build_task(robot, q_current, start_xyz, end_xyz, obj_index, approach_offset,
     traj.extend([q_con_start] * dwell_steps)
     actions.extend(["grip"] * dwell_steps); indices.extend([obj_index] * dwell_steps)
 
-    traj.extend(jtraj(q_con_start, q_app_start, 20))
+    traj.extend(jtraj(q_con_start, q_retract_start, 20))
     actions.extend(["move"] * 20); indices.extend([obj_index] * 20)
 
-    traj.extend(jtraj(q_app_start, q_app_end, 50))
+    traj.extend(jtraj(q_retract_start, q_retract_end, 50))
     actions.extend(["move"] * 50); indices.extend([obj_index] * 50)
+
+    traj.extend(jtraj(q_retract_end, q_app_end, 20))
+    actions.extend(["move"] * 20); indices.extend([obj_index] * 20)
 
     traj.extend(jtraj(q_app_end, q_con_end, 20))
     actions.extend(["move"] * 20); indices.extend([obj_index] * 20)
-        
+
     traj.extend([q_con_end] * dwell_steps)
     actions.extend(["place"] * dwell_steps); indices.extend([obj_index] * dwell_steps)
 
-    traj.extend(jtraj(q_con_end, q_app_end, 20))
+    traj.extend(jtraj(q_con_end, q_retract_end, 20))
     actions.extend(["move"] * 20); indices.extend([obj_index] * 20)
 
-    # Logic: Task builder produces approach/contact/grip/transfer/place segments deterministically.
-    return np.array(traj), q_app_end, actions, indices
+    traj.extend(jtraj(q_retract_end, q_app_end, 20))
+    actions.extend(["move"] * 20); indices.extend([obj_index] * 20)
+
+    # Logic: Task builder produces contact/grip/transfer/place segments deterministically.
+    return np.array(traj), q_con_end, actions, indices
 
 def build_program(tasks):
     q_current = np.array([0.0, 0.0, 0.0, 0.0]) # Home position
@@ -268,7 +302,7 @@ def build_program(tasks):
     all_actions = []
     all_indices = []
     for i, t in enumerate(tasks, 1):
-        traj, q_current, task_actions, task_indices = build_task(robot, q_current, t["start"], t["end"], i-1, APPROACH_OFFSET, DWELL_STEPS)
+        traj, q_current, task_actions, task_indices = build_task(robot, q_current, t["start"], t["end"], i-1, APPROACH_OFFSET, RETRACT_OFFSET, DWELL_STEPS)
         program.extend(traj)
         all_actions.extend(task_actions)
         all_indices.extend(task_indices)
@@ -355,17 +389,40 @@ def create_scene():
     link4_line, = ax.plot([], [], [], 'orange', linewidth=3) # Joint 4 (Revolute)
     joints, = ax.plot([], [], [], 'ko', markersize=6)
 
+    # Side legend table showing link/joint names
+    ax_table = fig.add_axes([0.78, 0.45, 0.20, 0.35])
+    ax_table.axis('off')
+    col_labels = ['Link / Joint', 'Value']
+    cell_text = [["Base", "-"], ["Joint 1", ""], ["Joint 2", ""], ["Prismatic (q3)", ""], ["Joint 4", ""]]
+    colors = [['white', 'white'], ['#1f77b4', 'white'], ['#2ca02c', 'white'], ['#ff00ff', 'white'], ['orange', 'white']]
+    table = ax_table.table(cellText=cell_text, colLabels=col_labels, cellColours=colors, loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 1.6)
+
     ax.set_xlim(-ax_limit, ax_limit)
     ax.set_ylim(-ax_limit, ax_limit)
     ax.set_zlim(0.0, 1.2)
     ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
 
+    # Work envelope: wireframe hemisphere (Z >= 0) only
+    u = np.linspace(0, 2 * np.pi, 60)
+    v = np.linspace(0, np.pi / 2, 30)  # only the upper hemisphere
+    uu, vv = np.meshgrid(u, v)
+    r = reach
+    X = r * np.cos(uu) * np.sin(vv)
+    Y = r * np.sin(uu) * np.sin(vv)
+    Z = r * np.cos(vv)
+
+    # Wireframe hemisphere to show workspace boundary
+    ax.plot_wireframe(X, Y, Z, color='dimgray', linewidth=0.6, alpha=0.6, rcount=60, ccount=30)
+
     # Logic: Build scene objects and return handles so animation can be run separately.
-    return fig, ax, objects, (link1_line, link2_line, prism_line, link4_line), joints, ax_limit
+    return fig, ax, objects, (link1_line, link2_line, prism_line, link4_line), joints, table, ax_limit
 
 
 def run_animation(frames, actions, indices, interval=20):
-    fig, ax, objects, (link1_line, link2_line, prism_line, link4_line), joints, ax_limit = create_scene()
+    fig, ax, objects, (link1_line, link2_line, prism_line, link4_line), joints, table, ax_limit = create_scene()
 
     grip_tol = 0.01
     place_tol = 0.01
@@ -386,6 +443,24 @@ def run_animation(frames, actions, indices, interval=20):
         action = actions[frame_idx]
         obj_index = indices[frame_idx]
         obj = objects[obj_index]
+
+        # Update table values (col 1) with current joint states
+        # Expected table layout rows: Base, Joint1, Joint2, Prismatic(q3), Joint4
+        try:
+            cells = table.get_celld()
+            # Row 0: Base
+            cells[(0, 1)].get_text().set_text('-')
+            # Joint 1 (q1)
+            cells[(1, 1)].get_text().set_text(f"{np.degrees(q[0]):.1f}°")
+            # Joint 2 (q2)
+            cells[(2, 1)].get_text().set_text(f"{np.degrees(q[1]):.1f}°")
+            # Prismatic (q3)
+            cells[(3, 1)].get_text().set_text(f"{q[2]:.3f} m")
+            # Joint4 (q4)
+            cells[(4, 1)].get_text().set_text(f"{np.degrees(q[3]):.1f}°")
+        except Exception:
+            # Safe fallback if table structure differs
+            pass
 
         transforms = robot.forward_kinematics_all(q)
         pts = [T[:3, 3] for T in transforms]
@@ -435,3 +510,25 @@ if __name__ == "__main__":
     # Build program then run animation when executed directly
     frames, actions, indices = build_program(tasks)
     run_animation(frames, actions, indices)
+
+
+def run_sanity_checks():
+    """Run basic sanity checks for IK and jtraj behavior.
+
+    Returns True on success; raises AssertionError on failure.
+    """
+    # IK should return finite joint values for a typical target and seed
+    q_seed = np.array([4.0, 4.0, 0.6, 4.0])  # outside prismatic limits intentionally
+    q_sol = robot.inverse_kinematics([0.3, -0.4, 0.05], q_seed)
+    assert np.all(np.isfinite(q_sol)), "IK returned non-finite values"
+    # Prismatic should be clamped to configured bounds
+    assert robot.d3_min - 1e-8 <= q_sol[2] <= robot.d3_max + 1e-8, "Prismatic clamp violated"
+
+    # jtraj should produce finite numbers for interpolated trajectory
+    q0 = np.array([2.8, 0.0, 0.2, 2.8])
+    q1 = np.array([-2.8, 0.0, 0.2, -2.8])
+    traj = jtraj(q0, q1, 5)
+    assert np.all(np.isfinite(traj)), "jtraj produced non-finite values"
+
+    print("Sanity checks passed: IK and jtraj returned finite values and prismatic clamping is active")
+    return True
