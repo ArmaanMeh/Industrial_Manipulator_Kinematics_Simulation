@@ -138,7 +138,13 @@ L2 = 0.35
 L3 = 0.35
 d4_min, d4_max = -0.45, 0.55
 
-robot = RRRPRobot(L1, L2, L3, [d4_min, d4_max])
+def create_robot():
+    """Create and return a configured RRRPRobot instance."""
+    return RRRPRobot(L1, L2, L3, [d4_min, d4_max])
+
+
+robot = create_robot()
+
 
 # ------------------------------------------------------------
 # 3. Tasks & Trajectory Generation
@@ -154,12 +160,21 @@ shelf_targets = [
     (0.5, 0.55, 0.45)
 ]
 
-tasks = []
-for i in range(3):
-    tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
+def create_tasks():
+    """Return tasks and timing parameters.
 
-APPROACH_OFFSET = 0.15 
-DWELL_STEPS = 5
+    Returns (tasks, approach_offset, retract_offset, dwell_steps)
+    """
+    tasks = []
+    for i in range(3):
+        tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
+    approach_offset = 0.15
+    retract_offset = 0.20
+    dwell_steps = 5
+    return tasks, approach_offset, retract_offset, dwell_steps
+
+
+tasks, APPROACH_OFFSET, RETRACT_OFFSET, DWELL_STEPS = create_tasks()
 
 def jtraj(q0, q1, steps):
     """
