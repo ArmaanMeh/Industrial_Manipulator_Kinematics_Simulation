@@ -4,7 +4,23 @@ RRPR Robot Arm Simulation (single-file)
 
 This repository contains a pick-and-place RRPR robot simulation implemented in a single Python file: `CW_RRPR.py`.
 
-Only `CW_RRPR.py` is used for the simulation and all included code below is taken from that file.
+**Approach (Jacobian & IK):**
+
+- We compute the geometric Jacobian from the joint-to-joint transforms produced by `RRPRRobot.forward_kinematics_all`. For revolute joints the column contributions are given by linear and angular components computed from joint axes and their origins. For a prismatic joint the linear component aligns with the joint axis and the angular component is zero.
+
+- For inverse kinematics we use a numeric pseudo-inverse method. The pseudo-inverse method computes a least-squares solution to the linearized relation between joint increments and end-effector position errors. Given the positional Jacobian `J_pos`, the pseudo-inverse `J_pos^+` provides the minimum-norm delta-q that best fits the position error in a least-squares sense. Applied iteratively (with a small step size), this update moves the end-effector toward the target and can be regularized to improve numerical stability when the Jacobian is ill-conditioned.
+
+- Why this approach?
+  - Compact and robust for mixed joint types (R, R, P, R) without lengthy symbolic derivations.
+  - Easy to extend (add damping, Tikhonov regularization, null-space control, secondary objectives).
+  - Handles redundancy numerically and lets us clamp or regularize joint variables (we clamp the prismatic joint and normalize revolute angles).
+
+- Advantages of this approach:
+  - **Simple & implementable:** Works directly from FK transforms and requires no symbolic derivation.
+  - **Flexible & extensible:** Easy to add damping, regularization, null-space control, and secondary objectives.
+  - **Numerically robust (with regularization):** Regularized pseudo-inverse handles near-singularities and redundancy stably.
+  - **Maintainable:** Less brittle than hand-derived closed-form solutions and easier to adapt to new joint types or constraints.
+  - **Practical:** Seeding IK with approach/contact poses and using regularized pseudo-inverse when necessary gives reliable behavior for position-only tasks.
 
 ## Requirements
 
@@ -81,6 +97,17 @@ L1, L2, L3 = 0.25, 0.25, 0.25
 d_prismatic_min, d_prismatic_max = 0, 0.45
 robot = RRPRRobot(L1, L2, L3, [d_prismatic_min, d_prismatic_max])
 ```
+
+**DH Parameters (used in `RRPRRobot.forward_kinematics_all`):**
+
+| Joint | Type | θ (theta) | d | a | α (alpha) | Notes |
+|---|---:|---|---|---|---|---|
+| 1 | Revolute (R) | q1 | L1 = 0.25 | 0 | π/2 | Base revolute (first link offset d=L1)
+| 2 | Revolute (R) | q2 | 0 | L2 = 0.25 | 0 | Second revolute (a=L2)
+| 3 | Prismatic (P) | 0 | q3 (clamped 0–0.45) | 0 | π/2 | Prismatic vertical joint (d = q3)
+| 4 | Revolute (R) | q4 | 0 | L3 = 0.25 | 0 | Final revolute, end-effector offset a=L3
+
+- **Logic:** The table maps directly to the DH calls in `forward_kinematics_all` and records the numeric link constants used in the simulation. Keeping the DH table here makes it simpler to reason about FK, Jacobian columns, and joint limits.
 
 - **Logic:** Link lengths and prismatic limits are chosen to give a safe reachable workspace; these constants live near the top to make parameter tuning straightforward.
 
@@ -166,4 +193,5 @@ python CW_RRPR.py
 
 - The IK used here targets position only (no explicit orientation control), which simplifies inverse kinematics for this educational simulation.
 - `RRPRRobot.inverse_kinematics` uses a pseudo-inverse update and clamps the prismatic joint to keep solutions valid.
-    (0.3, -0.4, 0.0),    
+
+**Jacobian & IK:** See the short 'Approach (Jacobian & IK)' note near the top of this README.    
