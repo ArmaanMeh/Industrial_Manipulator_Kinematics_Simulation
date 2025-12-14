@@ -22,6 +22,7 @@ This repository contains a pick-and-place RRPR robot simulation implemented in a
   - **Maintainable:** Less brittle than hand-derived closed-form solutions and easier to adapt to new joint types or constraints.
   - **Practical:** Seeding IK with approach/contact poses and using regularized pseudo-inverse when necessary gives reliable behavior for position-only tasks.
 
+**Orientation control:** Removed — inverse kinematics is position-only in this version. If you need orientation objectives later, we can add them back as an optional feature that remains backward compatible.
 ## Requirements
 
 - Python 3.8+
@@ -168,7 +169,7 @@ if __name__ == '__main__':
     run_animation(frames, actions, indices)
 ```
 
-- **Logic:** The animation loop updates link line data from the FK of the current joint configuration and applies grip/place state changes to the corresponding object polygons. The visualization code is isolated so unit tests or alternate front-ends could reuse the trajectory program without plotting.
+- **Logic:** The animation loop updates link line data from the FK of the current joint configuration and applies grip/place state changes to the corresponding object polygons. The scene includes a right-side, color-coded table (created by `create_scene()`) that lists link/joint names and displays live joint values each frame (q1, q2, q4 shown in degrees; q3 in meters). The work envelope is shown as a wireframe hemisphere (Z ≥ 0) indicating the approximate reachable workspace. The visualization code is isolated so unit tests or alternate front-ends could reuse the trajectory program without plotting.
 
 ## Dependencies & Installation
 
@@ -189,9 +190,4 @@ Run the simulation:
 python CW_RRPR.py
 ```
 
-## Notes
 
-- The IK used here targets position only (no explicit orientation control), which simplifies inverse kinematics for this educational simulation.
-- `RRPRRobot.inverse_kinematics` uses a pseudo-inverse update and clamps the prismatic joint to keep solutions valid.
-
-**Jacobian & IK:** See the short 'Approach (Jacobian & IK)' note near the top of this README.    
