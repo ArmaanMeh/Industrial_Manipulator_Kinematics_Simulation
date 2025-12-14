@@ -3,9 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-# ------------------------------------------------------------
 # 1. Math & Kinematics Library (Custom Implementation)
-# ------------------------------------------------------------
 
 def dh_transform(theta, d, a, alpha):
     """
@@ -91,9 +89,7 @@ class RRPRRobot:
         return J
 
     def inverse_kinematics(self, target_pos, q0):
-        """
-        Numerical Inverse Kinematics using Newton-Raphson.
-        """
+        
         q = np.array(q0, dtype=float)
         target_pos = np.array(target_pos)
         
@@ -127,9 +123,8 @@ class RRPRRobot:
             
         return q
 
-# ------------------------------------------------------------
 # 2. Robot Definition
-# ------------------------------------------------------------
+
 L1 = 0.25
 L2 = 0.30
 L3 = 0.30
@@ -137,9 +132,9 @@ d_prismatic_min, d_prismatic_max = -0.35, 0.45
 
 robot = RRPRRobot(L1, L2, L3, [d_prismatic_min, d_prismatic_max])
 
-# ------------------------------------------------------------
+
 # 3. Tasks & Trajectory Generation
-# ------------------------------------------------------------
+
 # --- NEW FLOOR TARGETS ---
 floor_targets = [
     (0.3, -0.4, 0.0),    
@@ -186,7 +181,7 @@ def jtraj(q0, q1, steps):
         
     return qs
 
-def build_task(q_current, start_xyz, end_xyz):
+def build_task(q_current, start_xyz, end_xyz, obj_index):
     sx, sy, sz = start_xyz
     ex, ey, ez = end_xyz
     
@@ -204,32 +199,61 @@ def build_task(q_current, start_xyz, end_xyz):
     q_con_end   = robot.inverse_kinematics(p_contact_end, q_app_end)
 
     traj = []
+    actions = []
+    indices = []
     
     # Sequence of moves
-    traj.extend(jtraj(q_current, q_app_start, 40))   # Move to approach point (above object)
-    traj.extend(jtraj(q_app_start, q_con_start, 20)) # Slide down to contact
-    traj.extend([q_con_start] * DWELL_STEPS)         # Grip
-    traj.extend(jtraj(q_con_start, q_app_start, 20)) # Slide up to clearance
-    traj.extend(jtraj(q_app_start, q_app_end, 50))   # Move to shelf approach
-    traj.extend(jtraj(q_app_end, q_con_end, 20))     # Slide down to place
-    traj.extend([q_con_end] * DWELL_STEPS)           # Release
-    traj.extend(jtraj(q_con_end, q_app_end, 20))     # Slide up to clearance
+    traj.extend(jtraj(q_current, q_app_start, 40))
+    actions.extend(["move"] * 40)
+    indices.extend([obj_index] * 40)
+    
+    traj.extend(jtraj(q_app_start, q_con_start, 20))
+    actions.extend(["move"] * 20)
+    indices.extend([obj_index] * 20)
 
-    return np.array(traj), q_app_end
+    traj.extend([q_con_start] * DWELL_STEPS)
+    actions.extend(["grip"] * DWELL_STEPS)
+    indices.extend([obj_index] * DWELL_STEPS)
+
+    traj.extend(jtraj(q_con_start, q_app_start, 20))
+    actions.extend(["move"] * 20)
+    indices.extend([obj_index] * 20)
+
+    traj.extend(jtraj(q_app_start, q_app_end, 50))
+    actions.extend(["move"] * 50)
+    indices.extend([obj_index] * 50)
+
+    traj.extend(jtraj(q_app_end, q_con_end, 20))
+    actions.extend(["move"] * 20)
+    indices.extend([obj_index] * 20)
+        
+    traj.extend([q_con_end] * DWELL_STEPS)
+    actions.extend(["place"] * DWELL_STEPS)
+    indices.extend([obj_index] * DWELL_STEPS)
+
+    traj.extend(jtraj(q_con_end, q_app_end, 20))
+    actions.extend(["move"] * 20)
+    indices.extend([obj_index] * 20)
+
+    return np.array(traj), q_app_end, actions, indices
 
 def build_program(tasks):
     q_current = np.array([0.0, 0.0, 0.0, 0.0]) # Home position
     program = []
+    all_actions = []
+    all_indices = []
     for i, t in enumerate(tasks, 1):
-        traj, q_current = build_task(q_current, t["start"], t["end"])
+        traj, q_current, task_actions, task_indices = build_task(q_current, t["start"], t["end"], i-1)
         program.extend(traj)
-    return np.array(program)
+        all_actions.extend(task_actions)
+        all_indices.extend(task_indices)
+    return np.array(program), all_actions, all_indices
 
-frames = build_program(tasks)
+frames, actions, indices = build_program(tasks)
 
-# ------------------------------------------------------------
+
 # 4. Visualization Helpers (Hexagons)
-# ------------------------------------------------------------
+
 def hex_faces(center, radius=0.05, height=0.05):
     cx, cy, cz = center
     angles = np.linspace(0, 2*np.pi, 6, endpoint=False)
@@ -246,12 +270,12 @@ def hex_faces(center, radius=0.05, height=0.05):
 def make_hex_collection(center, radius=0.05, height=0.05, color='gray'):
     return Poly3DCollection(hex_faces(center, radius, height), facecolors=color, alpha=0.85, edgecolor='black')
 
-# ------------------------------------------------------------
+
 # 5. Plotting & Animation
-# ------------------------------------------------------------
+
 fig = plt.figure(figsize=(10, 8))
 ax = fig.add_subplot(111, projection="3d")
-ax.set_title("R R P R Robot | Updated Targets Simulation")
+ax.set_title("R R P R Robot |Targets Simulation")
 
 # Environment
 reach = L1 + L2 + L3 + d_prismatic_max + 0.1
@@ -305,8 +329,8 @@ ax.set_ylim(-ax_limit, ax_limit)
 ax.set_zlim(0.0, 1.2)
 ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
 
-grip_tol = 0.05
-place_tol = 0.05
+grip_tol = 0.01
+place_tol = 0.01
 
 def reset_objects():
     """Resets all objects to their original floor positions."""
@@ -318,53 +342,52 @@ def reset_objects():
         obj["placed"] = False
 
 def update(frame_idx):
-    # Reset objects at the start of the animation loop
     if frame_idx == 0:
         reset_objects()
-        
+
     q = frames[frame_idx]
-    
+    action = actions[frame_idx]
+    obj_index = indices[frame_idx]
+    obj = objects[obj_index]
+
     transforms = robot.forward_kinematics_all(q)
     pts = [T[:3, 3] for T in transforms]
     base, P1, P2, P3, P4 = pts[0], pts[1], pts[2], pts[3], pts[4]
 
-    # Update Links
+    # Update robot links
     link1_line.set_data([base[0], P1[0]], [base[1], P1[1]])
     link1_line.set_3d_properties([base[2], P1[2]])
 
     link2_line.set_data([P1[0], P2[0]], [P1[1], P2[1]])
     link2_line.set_3d_properties([P1[2], P2[2]])
 
-    prism_line.set_data([P2[0], P3[0]], [P2[1], P3[1]]) # Joint 3 (Prismatic)
+    prism_line.set_data([P2[0], P3[0]], [P2[1], P3[1]])
     prism_line.set_3d_properties([P2[2], P3[2]])
 
-    link4_line.set_data([P3[0], P4[0]], [P3[1], P4[1]]) # Joint 4 (Revolute)
+    link4_line.set_data([P3[0], P4[0]], [P3[1], P4[1]])
     link4_line.set_3d_properties([P3[2], P4[2]])
 
     joints.set_data([base[0], P1[0], P2[0], P3[0], P4[0]],
                     [base[1], P1[1], P2[1], P3[1], P4[1]])
     joints.set_3d_properties([base[2], P1[2], P2[2], P3[2], P4[2]])
 
-    # Grip/Place Logic
-    for obj in objects:
-        if not obj["gripped"] and not obj["placed"]:
-            if np.linalg.norm(P4 - obj["start"]) < grip_tol:
-                obj["gripped"] = True
+    # Grip/Place Logic with action flags
+    if action == "grip" and not obj["gripped"] and not obj["placed"]:
+        obj["gripped"] = True
 
-        if obj["gripped"] and not obj["placed"]:
-            if np.linalg.norm(P4 - obj["end"]) > place_tol:
-                # Object moves with the end-effector
-                center = P4 
-                faces = hex_faces(center, obj["radius"], obj["height"])
-                obj["poly"].set_verts(faces)
-            else:
-                # Object placed at target
-                center = obj["end"]
-                faces = hex_faces(center, obj["radius"], obj["height"])
-                obj["poly"].set_verts(faces)
-                obj["gripped"] = False
-                obj["placed"] = True
-            
+    if obj["gripped"] and not obj["placed"]:
+        if action == "move":
+            center = P4
+            faces = hex_faces(center, obj["radius"], obj["height"])
+            obj["poly"].set_verts(faces)
+
+    if action == "release" and obj["gripped"]:
+        obj["gripped"] = False
+        obj["placed"] = True
+        center = obj["end"]
+        faces = hex_faces(center, obj["radius"], obj["height"])
+        obj["poly"].set_verts(faces)
+
     return link1_line, link2_line, prism_line, link4_line, joints
 
 ani = FuncAnimation(fig, update, frames=len(frames), interval=20, blit=False, repeat=True)
