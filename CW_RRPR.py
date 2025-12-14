@@ -3,6 +3,14 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+"""CW_RRPR.py
+
+Single-file modular implementation of an RRPR pick-and-place simulation.
+
+Sections are split into: kinematics, trajectory, visualization and runner.
+Each section includes a short "Logic:" note explaining reasoning.
+"""
+
 # 1. Math & Kinematics Library (Custom Implementation)
 
 def dh_transform(theta, d, a, alpha):
@@ -18,6 +26,7 @@ def dh_transform(theta, d, a, alpha):
         [0,   sa,     ca,    d   ],
         [0,   0,      0,     1   ]
     ])
+    # Logic: Encapsulates the Denavit–Hartenberg transform — used to compose link transforms.
     
 class RRPRRobot:
     # L1, L2, L3 are link lengths. d4_limits apply to the prismatic joint q3.
@@ -55,10 +64,12 @@ class RRPRRobot:
         T4 = T3 @ T3_4
         
         return [T0, T1, T2, T3, T4]
+    # Logic: Compute joint-to-joint transforms for FK and Jacobian computation.
 
     def get_end_effector_pos(self, q):
         transforms = self.forward_kinematics_all(q)
         return transforms[-1][:3, 3]
+    # Logic: Convenience wrapper returning only the 3D end-effector position.
 
     def jacobian(self, q):
         """
@@ -87,6 +98,7 @@ class RRPRRobot:
                 J[3:, i] = z_prev
                 
         return J
+    # Logic: Geometric Jacobian (6x4) mapping joint rates to end-effector twist.
 
     def inverse_kinematics(self, target_pos, q0):
         
@@ -122,15 +134,23 @@ class RRPRRobot:
             q[revolute_indices] = (q[revolute_indices] + np.pi) % (2 * np.pi) - np.pi
             
         return q
+    # Logic: Simple pseudo-inverse based IK solver; clamps prismatic and normalizes revolute joints.
 
 # 2. Robot Definition
 
-L1 = 0.25
-L2 = 0.30
-L3 = 0.30
-d_prismatic_min, d_prismatic_max = -0.35, 0.45
+def create_robot():
+    """Create and return a configured RRPRRobot instance.
 
-robot = RRPRRobot(L1, L2, L3, [d_prismatic_min, d_prismatic_max])
+    Logic: Centralizes robot configuration so callers can create instances consistently.
+    """
+    L1 = 0.25
+    L2 = 0.25
+    L3 = 0.25
+    d_prismatic_min, d_prismatic_max = 0, 0.45
+    return RRPRRobot(L1, L2, L3, [d_prismatic_min, d_prismatic_max])
+
+
+robot = create_robot()
 
 
 # 3. Tasks & Trajectory Generation
@@ -152,8 +172,20 @@ tasks = []
 for i in range(3):
     tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
 
-APPROACH_OFFSET = 0 
-DWELL_STEPS = 5
+def create_tasks():
+    """Return tasks and timing parameters.
+
+    Logic: Keeps task definitions and timing parameters together for clarity.
+    """
+    tasks = []
+    for i in range(3):
+        tasks.append({"start": floor_targets[i], "end": shelf_targets[i]})
+    approach_offset = 0
+    dwell_steps = 5
+    return tasks, approach_offset, dwell_steps
+
+
+tasks, APPROACH_OFFSET, DWELL_STEPS = create_tasks()
 
 def jtraj(q0, q1, steps):
     """
@@ -181,60 +213,53 @@ def jtraj(q0, q1, steps):
         
     return qs
 
-def build_task(q_current, start_xyz, end_xyz, obj_index):
+def build_task(robot, q_current, start_xyz, end_xyz, obj_index, approach_offset, dwell_steps):
     sx, sy, sz = start_xyz
     ex, ey, ez = end_xyz
-    
+
     # Define approach and contact points based on offset
-    p_approach_start = np.array([sx, sy, sz + APPROACH_OFFSET])
-    p_contact_start  = np.array([sx, sy, sz])
-    p_approach_end   = np.array([ex, ey, ez + APPROACH_OFFSET]) 
-    p_contact_end    = np.array([ex, ey, ez])
+    p_approach_start = np.array([sx, sy, sz + approach_offset])
+    p_contact_start = np.array([sx, sy, sz])
+    p_approach_end = np.array([ex, ey, ez + approach_offset])
+    p_contact_end = np.array([ex, ey, ez])
 
     # IK Solutions
     q_app_start = robot.inverse_kinematics(p_approach_start, q_current)
     q_con_start = robot.inverse_kinematics(p_contact_start, q_app_start)
     # Force IK seed to be the contact configuration at start
-    q_app_end   = robot.inverse_kinematics(p_approach_end, q_con_start)
-    q_con_end   = robot.inverse_kinematics(p_contact_end, q_app_end)
+    q_app_end = robot.inverse_kinematics(p_approach_end, q_con_start)
+    q_con_end = robot.inverse_kinematics(p_contact_end, q_app_end)
 
     traj = []
     actions = []
     indices = []
-    
+
     # Sequence of moves
     traj.extend(jtraj(q_current, q_app_start, 40))
-    actions.extend(["move"] * 40)
-    indices.extend([obj_index] * 40)
-    
-    traj.extend(jtraj(q_app_start, q_con_start, 20))
-    actions.extend(["move"] * 20)
-    indices.extend([obj_index] * 20)
+    actions.extend(["move"] * 40); indices.extend([obj_index] * 40)
 
-    traj.extend([q_con_start] * DWELL_STEPS)
-    actions.extend(["grip"] * DWELL_STEPS)
-    indices.extend([obj_index] * DWELL_STEPS)
+    traj.extend(jtraj(q_app_start, q_con_start, 20))
+    actions.extend(["move"] * 20); indices.extend([obj_index] * 20)
+
+    traj.extend([q_con_start] * dwell_steps)
+    actions.extend(["grip"] * dwell_steps); indices.extend([obj_index] * dwell_steps)
 
     traj.extend(jtraj(q_con_start, q_app_start, 20))
-    actions.extend(["move"] * 20)
-    indices.extend([obj_index] * 20)
+    actions.extend(["move"] * 20); indices.extend([obj_index] * 20)
 
     traj.extend(jtraj(q_app_start, q_app_end, 50))
-    actions.extend(["move"] * 50)
-    indices.extend([obj_index] * 50)
+    actions.extend(["move"] * 50); indices.extend([obj_index] * 50)
 
     traj.extend(jtraj(q_app_end, q_con_end, 20))
-    actions.extend(["move"] * 20)
-    indices.extend([obj_index] * 20)
+    actions.extend(["move"] * 20); indices.extend([obj_index] * 20)
         
-    traj.extend([q_con_end] * DWELL_STEPS)
-    actions.extend(["place"] * DWELL_STEPS)
-    indices.extend([obj_index] * DWELL_STEPS)
+    traj.extend([q_con_end] * dwell_steps)
+    actions.extend(["place"] * dwell_steps); indices.extend([obj_index] * dwell_steps)
 
     traj.extend(jtraj(q_con_end, q_app_end, 20))
-    actions.extend(["move"] * 20)
-    indices.extend([obj_index] * 20)
+    actions.extend(["move"] * 20); indices.extend([obj_index] * 20)
 
+    # Logic: Task builder produces approach/contact/grip/transfer/place segments deterministically.
     return np.array(traj), q_app_end, actions, indices
 
 def build_program(tasks):
@@ -243,10 +268,11 @@ def build_program(tasks):
     all_actions = []
     all_indices = []
     for i, t in enumerate(tasks, 1):
-        traj, q_current, task_actions, task_indices = build_task(q_current, t["start"], t["end"], i-1)
+        traj, q_current, task_actions, task_indices = build_task(robot, q_current, t["start"], t["end"], i-1, APPROACH_OFFSET, DWELL_STEPS)
         program.extend(traj)
         all_actions.extend(task_actions)
         all_indices.extend(task_indices)
+    # Logic: Chains each task's trajectory into a single program with aligned action/indices arrays.
     return np.array(program), all_actions, all_indices
 
 frames, actions, indices = build_program(tasks)
@@ -273,123 +299,139 @@ def make_hex_collection(center, radius=0.05, height=0.05, color='gray'):
 
 # 5. Plotting & Animation
 
-fig = plt.figure(figsize=(10, 8))
-ax = fig.add_subplot(111, projection="3d")
-ax.set_title("R R P R Robot |Targets Simulation")
+def create_scene():
+    """Create Matplotlib figure, axes, objects and graphic handles.
 
-# Environment
-reach = L1 + L2 + L3 + d_prismatic_max + 0.1
-ax_limit = reach
-Xp, Yp = np.meshgrid(np.linspace(-ax_limit, ax_limit, 2), np.linspace(-ax_limit, ax_limit, 2))
-Zp = np.zeros_like(Xp)
-ax.plot_surface(Xp, Yp, Zp, alpha=0.2, color='lightblue', edgecolor='none')
+    Returns: (fig, ax, objects, lines, joints, ax_limit)
+    """
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_title("R R P R Robot |Targets Simulation")
 
-# --- UPDATED SHELF VISUALIZATION ---
-shelf_x, shelf_y = [0.3, 0.7], [0.45, 0.65] 
-shelf_levels = [0.30, 0.40, 0.50] # Match the target Z levels
-for z_level in shelf_levels:
-    Xs, Ys = np.meshgrid(shelf_x, shelf_y)
-    Zs = np.full_like(Xs, z_level)
-    ax.plot_surface(Xs, Ys, Zs, alpha=0.3, color='saddlebrown', edgecolor='none')
+    # Environment
+    reach = robot.L1 + robot.L2 + robot.L3 + robot.d3_max + 0.1
+    ax_limit = reach
+    Xp, Yp = np.meshgrid(np.linspace(-ax_limit, ax_limit, 2), np.linspace(-ax_limit, ax_limit, 2))
+    Zp = np.zeros_like(Xp)
+    ax.plot_surface(Xp, Yp, Zp, alpha=0.2, color='lightblue', edgecolor='none')
 
-corner_points = [(shelf_x[0], shelf_y[0]), (shelf_x[0], shelf_y[1]),
-                 (shelf_x[1], shelf_y[0]), (shelf_x[1], shelf_y[1])]
-for (cx, cy) in corner_points:
-    ax.plot([cx, cx], [cy, cy], [0, shelf_levels[-1]], color='saddlebrown', linewidth=3)
+    # Shelf visualization
+    shelf_x, shelf_y = [0.3, 0.7], [0.45, 0.65]
+    shelf_levels = [0.30, 0.40, 0.50]
+    for z_level in shelf_levels:
+        Xs, Ys = np.meshgrid(shelf_x, shelf_y)
+        Zs = np.full_like(Xs, z_level)
+        ax.plot_surface(Xs, Ys, Zs, alpha=0.3, color='saddlebrown', edgecolor='none')
 
-# Labels
-for i, (x, y, z) in enumerate(floor_targets, 1):
-    ax.text(x, y, z + 0.08, f"F{i}", color="red", ha="center")
-for i, (x, y, z) in enumerate(shelf_targets, 1):
-    ax.text(x, y, z + 0.08, f"S{i}", color="blue", ha="center")
+    corner_points = [(shelf_x[0], shelf_y[0]), (shelf_x[0], shelf_y[1]),
+                     (shelf_x[1], shelf_y[0]), (shelf_x[1], shelf_y[1])]
+    for (cx, cy) in corner_points:
+        ax.plot([cx, cx], [cy, cy], [0, shelf_levels[-1]], color='saddlebrown', linewidth=3)
 
-# Objects
-objects = []
-hex_radius, hex_height = 0.05, 0.05
-for i, (x, y, z) in enumerate(floor_targets, 1):
-    poly = make_hex_collection((x, y, z), radius=hex_radius, height=hex_height, color='gray')
-    ax.add_collection3d(poly)
-    objects.append({
-        "poly": poly,
-        "radius": hex_radius, "height": hex_height,
-        "start": np.array([x, y, z]),
-        "end": np.array(shelf_targets[i - 1]),
-        "gripped": False, "placed": False
-    })
+    # Labels
+    for i, (x, y, z) in enumerate(floor_targets, 1):
+        ax.text(x, y, z + 0.08, f"F{i}", color="red", ha="center")
+    for i, (x, y, z) in enumerate(shelf_targets, 1):
+        ax.text(x, y, z + 0.08, f"S{i}", color="blue", ha="center")
 
-# Robot Visuals
-link1_line, = ax.plot([], [], [], 'b-', linewidth=3)
-link2_line, = ax.plot([], [], [], 'g-', linewidth=3)
-prism_line, = ax.plot([], [], [], 'm-', linewidth=3) # Joint 3 (Prismatic)
-link4_line, = ax.plot([], [], [], 'orange', linewidth=3) # Joint 4 (Revolute)
-joints, = ax.plot([], [], [], 'ko', markersize=6)
+    # Objects
+    objects = []
+    hex_radius, hex_height = 0.05, 0.05
+    for i, (x, y, z) in enumerate(floor_targets, 1):
+        poly = make_hex_collection((x, y, z), radius=hex_radius, height=hex_height, color='gray')
+        ax.add_collection3d(poly)
+        objects.append({
+            "poly": poly,
+            "radius": hex_radius, "height": hex_height,
+            "start": np.array([x, y, z]),
+            "end": np.array(shelf_targets[i - 1]),
+            "gripped": False, "placed": False
+        })
 
-ax.set_xlim(-ax_limit, ax_limit)
-ax.set_ylim(-ax_limit, ax_limit)
-ax.set_zlim(0.0, 1.2)
-ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
+    # Robot visuals
+    link1_line, = ax.plot([], [], [], 'b-', linewidth=3)
+    link2_line, = ax.plot([], [], [], 'g-', linewidth=3)
+    prism_line, = ax.plot([], [], [], 'm-', linewidth=3) # Joint 3 (Prismatic)
+    link4_line, = ax.plot([], [], [], 'orange', linewidth=3) # Joint 4 (Revolute)
+    joints, = ax.plot([], [], [], 'ko', markersize=6)
 
-grip_tol = 0.01
-place_tol = 0.01
+    ax.set_xlim(-ax_limit, ax_limit)
+    ax.set_ylim(-ax_limit, ax_limit)
+    ax.set_zlim(0.0, 1.2)
+    ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
 
-def reset_objects():
-    """Resets all objects to their original floor positions."""
-    for obj in objects:
-        center = obj["start"]
-        faces = hex_faces(center, obj["radius"], obj["height"])
-        obj["poly"].set_verts(faces)
-        obj["gripped"] = False
-        obj["placed"] = False
+    # Logic: Build scene objects and return handles so animation can be run separately.
+    return fig, ax, objects, (link1_line, link2_line, prism_line, link4_line), joints, ax_limit
 
-def update(frame_idx):
-    if frame_idx == 0:
-        reset_objects()
 
-    q = frames[frame_idx]
-    action = actions[frame_idx]
-    obj_index = indices[frame_idx]
-    obj = objects[obj_index]
+def run_animation(frames, actions, indices, interval=20):
+    fig, ax, objects, (link1_line, link2_line, prism_line, link4_line), joints, ax_limit = create_scene()
 
-    transforms = robot.forward_kinematics_all(q)
-    pts = [T[:3, 3] for T in transforms]
-    base, P1, P2, P3, P4 = pts[0], pts[1], pts[2], pts[3], pts[4]
+    grip_tol = 0.01
+    place_tol = 0.01
 
-    # Update robot links
-    link1_line.set_data([base[0], P1[0]], [base[1], P1[1]])
-    link1_line.set_3d_properties([base[2], P1[2]])
+    def reset_objects():
+        for obj in objects:
+            center = obj["start"]
+            faces = hex_faces(center, obj["radius"], obj["height"])
+            obj["poly"].set_verts(faces)
+            obj["gripped"] = False
+            obj["placed"] = False
 
-    link2_line.set_data([P1[0], P2[0]], [P1[1], P2[1]])
-    link2_line.set_3d_properties([P1[2], P2[2]])
+    def update(frame_idx):
+        if frame_idx == 0:
+            reset_objects()
 
-    prism_line.set_data([P2[0], P3[0]], [P2[1], P3[1]])
-    prism_line.set_3d_properties([P2[2], P3[2]])
+        q = frames[frame_idx]
+        action = actions[frame_idx]
+        obj_index = indices[frame_idx]
+        obj = objects[obj_index]
 
-    link4_line.set_data([P3[0], P4[0]], [P3[1], P4[1]])
-    link4_line.set_3d_properties([P3[2], P4[2]])
+        transforms = robot.forward_kinematics_all(q)
+        pts = [T[:3, 3] for T in transforms]
+        base, P1, P2, P3, P4 = pts[0], pts[1], pts[2], pts[3], pts[4]
 
-    joints.set_data([base[0], P1[0], P2[0], P3[0], P4[0]],
-                    [base[1], P1[1], P2[1], P3[1], P4[1]])
-    joints.set_3d_properties([base[2], P1[2], P2[2], P3[2], P4[2]])
+        # Update robot links
+        link1_line.set_data([base[0], P1[0]], [base[1], P1[1]])
+        link1_line.set_3d_properties([base[2], P1[2]])
 
-    # Grip/Place Logic with action flags
-    if action == "grip" and not obj["gripped"] and not obj["placed"]:
-        obj["gripped"] = True
+        link2_line.set_data([P1[0], P2[0]], [P1[1], P2[1]])
+        link2_line.set_3d_properties([P1[2], P2[2]])
 
-    if obj["gripped"] and not obj["placed"]:
-        if action == "move":
-            center = P4
+        prism_line.set_data([P2[0], P3[0]], [P2[1], P3[1]])
+        prism_line.set_3d_properties([P2[2], P3[2]])
+
+        link4_line.set_data([P3[0], P4[0]], [P3[1], P4[1]])
+        link4_line.set_3d_properties([P3[2], P4[2]])
+
+        joints.set_data([base[0], P1[0], P2[0], P3[0], P4[0]],
+                        [base[1], P1[1], P2[1], P3[1], P4[1]])
+        joints.set_3d_properties([base[2], P1[2], P2[2], P3[2], P4[2]])
+
+        # Grip/Place Logic with action flags
+        if action == "grip" and not obj["gripped"] and not obj["placed"]:
+            obj["gripped"] = True
+
+        if obj["gripped"] and not obj["placed"]:
+            if action == "move":
+                center = P4
+                faces = hex_faces(center, obj["radius"], obj["height"])
+                obj["poly"].set_verts(faces)
+
+        if action == "place" and obj["gripped"]:
+            obj["gripped"] = False
+            obj["placed"] = True
+            center = obj["end"]
             faces = hex_faces(center, obj["radius"], obj["height"])
             obj["poly"].set_verts(faces)
 
-    if action == "release" and obj["gripped"]:
-        obj["gripped"] = False
-        obj["placed"] = True
-        center = obj["end"]
-        faces = hex_faces(center, obj["radius"], obj["height"])
-        obj["poly"].set_verts(faces)
+        return link1_line, link2_line, prism_line, link4_line, joints
 
-    return link1_line, link2_line, prism_line, link4_line, joints
+    ani = FuncAnimation(fig, update, frames=len(frames), interval=interval, blit=False, repeat=True)
+    plt.show()
 
-ani = FuncAnimation(fig, update, frames=len(frames), interval=20, blit=False, repeat=True)
 
-plt.show()
+if __name__ == "__main__":
+    # Build program then run animation when executed directly
+    frames, actions, indices = build_program(tasks)
+    run_animation(frames, actions, indices)
